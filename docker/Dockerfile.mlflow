@@ -1,0 +1,10 @@
+FROM python:3.11-slim
+
+RUN pip install --no-cache-dir mlflow==2.16.2 sqlalchemy==2.0.36 pymysql==1.1.1 cryptography==43.0.1
+
+EXPOSE 5000
+
+# Backend store points at the same MySQL instance (separate schema),
+# artifacts stored on a mounted volume (swap for S3 in AWS deployment
+# via --default-artifact-root s3://<bucket>/mlflow-artifacts).
+CMD ["sh", "-c", "mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri \"$MLFLOW_BACKEND_STORE_URI\" --default-artifact-root /mlflow/artifacts"]

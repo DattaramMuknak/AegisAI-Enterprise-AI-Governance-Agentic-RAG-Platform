@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aegis-config
+  namespace: aegis-ai
+data:
+  APP_NAME: "AegisAI"
+  ENV: "production"
+  LOG_LEVEL: "INFO"
+  GROQ_MODEL: "llama-3.3-70b-versatile"
+  PINECONE_INDEX_NAME: "aegis-governance-rag"
+  PINECONE_CLOUD: "aws"
+  PINECONE_REGION: "us-east-1"
+  EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+  EMBEDDING_DIM: "384"
+  MLFLOW_TRACKING_URI: "http://mlflow-service:5000"
+  MLFLOW_EXPERIMENT_NAME: "aegis-governance"
+  RISK_BLOCK_THRESHOLD: "75"
+  GROUNDING_MIN_SCORE: "0.55"
+  TOXICITY_BLOCK_THRESHOLD: "0.7"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+  JWT_ALGORITHM: "HS256"

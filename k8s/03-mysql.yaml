@@ -1,0 +1,63 @@
+# For production on AWS, prefer Amazon RDS for MySQL over this StatefulSet
+# and just point DATABASE_URL at the RDS endpoint. This manifest is provided
+# for local/dev clusters (kind/minikube) or self-managed environments.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: aegis-mysql
+  namespace: aegis-ai
+spec:
+  serviceName: aegis-mysql-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aegis-mysql
+  template:
+    metadata:
+      labels:
+        app: aegis-mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: aegis-secrets, key: MYSQL_ROOT_PASSWORD }
+            - name: MYSQL_USER
+              value: aegis
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: aegis-secrets, key: MYSQL_PASSWORD }
+            - name: MYSQL_DATABASE
+              value: aegis_governance
+          volumeMounts:
+            - name: mysql-storage
+              mountPath: /var/lib/mysql
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: gp3
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-mysql-service
+  namespace: aegis-ai
+spec:
+  selector:
+    app: aegis-mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+  clusterIP: None

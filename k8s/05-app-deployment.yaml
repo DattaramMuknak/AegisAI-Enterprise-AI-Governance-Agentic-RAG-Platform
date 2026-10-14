@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-app
+  namespace: aegis-ai
+  labels:
+    app: aegis-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: aegis-app
+  template:
+    metadata:
+      labels:
+        app: aegis-app
+    spec:
+      containers:
+        - name: aegis-app
+          image: ghcr.io/vaibhavsable451/aegisai-enterprise-ai-governance-agentic-rag-platform-app:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: aegis-config }
+            - secretRef: { name: aegis-secrets }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }

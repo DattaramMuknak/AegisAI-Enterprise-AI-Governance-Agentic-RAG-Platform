@@ -1,0 +1,80 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: aegis-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-aegis_password}
+      MYSQL_DATABASE: aegis_governance
+      MYSQL_USER: ${MYSQL_USER:-aegis}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-aegis_password}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD:-aegis_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlflow
+    image: ghcr.io/dattarammuknak/aegisai-mlflow:latest
+    container_name: aegis-mlflow
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MLFLOW_BACKEND_STORE_URI: ${MLFLOW_BACKEND_STORE_URI:-mysql+pymysql://aegis:aegis_password@mysql:3306/mlflow_tracking}
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ghcr.io/dattarammuknak/aegisai-backend:latest
+    container_name: aegis-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mlflow:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://aegis:aegis_password@mysql:3306/aegis_governance}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./aegis-frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL: http://localhost:8000
+    image: ghcr.io/dattarammuknak/aegisai-frontend:latest
+    container_name: aegis-frontend
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "80:80"
+
+volumes:
+  mysql_data:
+  mlflow_artifacts:
