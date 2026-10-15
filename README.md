@@ -63,144 +63,230 @@ uvicorn app.main:app --reload
 
 Open http://localhost:8000/docs for interactive Swagger UI.
 
-## 2. Run the full stack with Docker Compose
+## 2. Run the Full Project Using Docker Compose
+
+AegisAI uses Docker Compose to run the application and its supporting services together. It includes the FastAPI backend, MySQL database, and MLflow tracking server.
+
+### Step 1: Configure Environment Variables
+
+Create your local environment file:
 
 ```bash
 cp .env.example .env
-# fill in GROQ_API_KEY and PINECONE_API_KEY at minimum
+```
 
+Open `.env` and configure the required environment variables, including your API keys and database settings.
+
+At minimum, configure the required `GROQ_API_KEY` and `PINECONE_API_KEY`. Check `.env.example` for the complete list of variables required by your project.
+
+**Important:** Never upload your `.env` file or API keys to GitHub.
+
+### Step 2: Start the Application
+
+Run the following command from the project root:
+
+```bash
 docker compose up --build
 ```
 
-When running the API on your host with `uvicorn`, do not use the Docker-only hostname
-`mysql` in `DATABASE_URL`. Use `localhost` for a MySQL server exposed on your machine,
-for example `mysql+pymysql://aegis:aegis_password@localhost:3306/aegis_governance`.
+Docker Compose builds the application image and starts the configured services.
 
-This starts:
-- **MySQL** on `:3306` (auto-creates `aegis_governance` + `mlflow_tracking` schemas via `sql/init.sql`)
-- **MLflow** tracking server on `:5000` (backed by MySQL)
-- **AegisAI app** on `:8000`
+The project includes:
 
-## 2.1 Run on AWS EC2
+- **FastAPI Backend (`:8000`)** — Handles user queries, document processing, AI agents, and governance checks.
+- **MySQL (`:3306`)** — Stores application data and audit records.
+- **MLflow (`:5000`)** — Provides experiment tracking and model-related monitoring.
 
-On EC2, build and run the app container directly:
+The exact services and ports depend on your `docker-compose.yml` configuration.
 
-```bash
-docker build -t aegis-app .
-docker run -d --name aegis-app -p 80:8000 --env-file .env aegis-app
+## 3. Test AegisAI
+
+Once the application is running, open the API documentation in your browser:
+
+```text
+http://localhost:8000/docs
 ```
 
-If you want to change the container port, pass `-e PORT=...` and map the host port to match:
+Use the interactive Swagger UI to explore and test the available API endpoints.
+
+### Example API Operations
+
+**1. Upload a policy document**
 
 ```bash
-docker run -d --name aegis-app -e PORT=8000 -p 80:8000 --env-file .env aegis-app
-```
-
-## 3. Try it
-
-```bash
-# Upload a policy document
 curl -X POST http://localhost:8000/api/v1/documents/upload \
-  -F "file=@sample_policy.pdf" -F "source_type=policy"
+  -F "file=@sample_policy.pdf" \
+  -F "source_type=policy"
+```
 
-# Ask a governed question
+**2. Ask a question using the governance-enabled AI system**
+
+```bash
 curl -X POST http://localhost:8000/api/v1/chat \
   -H "Content-Type: application/json" \
   -d '{"prompt": "What is our data retention policy for customer records?"}'
+```
 
-# Governance dashboard stats
+**3. Retrieve dashboard statistics**
+
+```bash
 curl http://localhost:8000/api/v1/dashboard/stats
+```
 
-# Full audit trail for one request
+**4. Retrieve an audit trail**
+
+```bash
 curl http://localhost:8000/api/v1/audit/<trace_id>
 ```
 
-A typical `/chat` response includes a governance block like:
+Replace `sample_policy.pdf` with an existing policy document and `<trace_id>` with the trace ID returned by a request.
 
-```json
-{
-  "governance": {
-    "risk_score": 18,
-    "grounding_score": 0.94,
-    "pii_detected": false,
-    "policy_violation": false,
-    "hallucination_flag": false,
-    "governance_decision": "allowed",
-    "confidence": "High"
-  }
-}
-```
+### Governance Results
 
-## 4. Deploy to AWS (EKS)
+AegisAI evaluates AI responses using governance checks. Depending on the implementation and the request, the response can include information such as:
 
-### 4.1 Push images to ECR
+- Risk score and confidence level
+- Grounding score
+- Personally identifiable information (PII) detection
+- Policy violation detection
+- Hallucination-related checks
+- Governance decision, such as allowing or flagging a response
 
-```bash
-aws ecr create-repository --repository-name aegis-app
-aws ecr create-repository --repository-name aegis-mlflow
+These checks help users understand the risks and reliability of an AI-generated answer.
 
-aws ecr get-login-password --region <region> | docker login --username AWS \
-  --password-stdin <account_id>.dkr.ecr.<region>.amazonaws.com
+## 4. Deploy AegisAI on AWS EC2
 
-docker build -t <account_id>.dkr.ecr.<region>.amazonaws.com/aegis-app:latest .
-docker push <account_id>.dkr.ecr.<region>.amazonaws.com/aegis-app:latest
+AegisAI can be deployed on an AWS EC2 virtual machine using Docker. This approach runs the project on a cloud server without requiring Kubernetes or a managed container orchestration service.
 
-docker build -t <account_id>.dkr.ecr.<region>.amazonaws.com/aegis-mlflow:latest -f docker/Dockerfile.mlflow .
-docker push <account_id>.dkr.ecr.<region>.amazonaws.com/aegis-mlflow:latest
-```
+### Step 1: Launch an EC2 Instance
 
-### 4.2 Create the EKS cluster
+1. Open the AWS Management Console and navigate to **EC2**.
+2. Launch an Ubuntu instance.
+3. Create or select a key pair for SSH access.
+4. Configure the security group to allow SSH access on port `22` from your IP address.
+5. Allow HTTP traffic on port `80` so users can access the application.
 
-```bash
-eksctl create cluster \
-  --name aegis-cluster \
-  --region <region> \
-  --nodegroup-name aegis-nodes \
-  --node-type t3.large \
-  --nodes 3 --nodes-min 3 --nodes-max 6 \
-  --managed
-```
+Only open additional ports, such as `8000`, when required for testing. Avoid exposing database ports publicly.
 
-### 4.3 Recommended: use managed AWS services instead of in-cluster stateful pods
+### Step 2: Connect to EC2
 
-- **MySQL** → Amazon RDS for MySQL (Multi-AZ) instead of `k8s/03-mysql.yaml`
-- **MLflow artifacts** → S3 bucket instead of a PVC (`--default-artifact-root s3://<bucket>/mlflow-artifacts`)
-- **Secrets** → AWS Secrets Manager + [External Secrets Operator](https://external-secrets.io/), instead of hand-editing `k8s/02-secret.yaml`
-- **Ingress/TLS** → AWS Load Balancer Controller + ACM certificate (see annotation in `06-service-ingress.yaml`)
+Connect to the instance using SSH or the EC2 Instance Connect option in the AWS Console.
 
-### 4.4 Install the AWS Load Balancer Controller (for the Ingress)
+Update the system packages:
 
 ```bash
-eksctl utils associate-iam-oidc-provider --cluster aegis-cluster --approve
-helm repo add eks https://aws.github.io/eks-charts
-helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
-  -n kube-system --set clusterName=aegis-cluster
+sudo apt update
+sudo apt upgrade -y
 ```
 
-### 4.5 Apply manifests
+Install Docker and the Docker Compose plugin using the official Docker installation instructions for Ubuntu. Verify the installation:
 
 ```bash
-kubectl apply -f k8s/00-namespace.yaml
-kubectl apply -f k8s/01-configmap.yaml
-
-# Replace placeholders in 02-secret.yaml or create the secret imperatively instead:
-kubectl create secret generic aegis-secrets -n aegis-ai \
-  --from-literal=SECRET_KEY=$(openssl rand -hex 32) \
-  --from-literal=DATABASE_URL="mysql+pymysql://aegis:<pwd>@<rds-endpoint>:3306/aegis_governance" \
-  --from-literal=GROQ_API_KEY=<your_key> \
-  --from-literal=PINECONE_API_KEY=<your_key> \
-  --from-literal=MYSQL_ROOT_PASSWORD=<pwd> \
-  --from-literal=MYSQL_PASSWORD=<pwd>
-
-# Skip 03-mysql.yaml if using RDS
-kubectl apply -f k8s/04-mlflow.yaml
-kubectl apply -f k8s/05-app-deployment.yaml
-kubectl apply -f k8s/06-service-ingress.yaml
-kubectl apply -f k8s/07-hpa.yaml
-
-kubectl get pods -n aegis-ai -w
-kubectl get ingress -n aegis-ai   # grab the ALB hostname, point your DNS at it
+docker --version
+docker compose version
 ```
+
+### Step 3: Get the Project on EC2
+
+Clone your GitHub repository:
+
+```bash
+git clone https://github.com/DattaramMuknak/AegisAI-Enterprise-AI-Governance-Agentic-RAG-Platform.git
+```
+
+Navigate into the project directory:
+
+```bash
+cd AegisAI-Enterprise-AI-Governance-Agentic-RAG-Platform
+```
+
+### Step 4: Configure the Environment
+
+Create the environment file:
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Add the required environment variables and valid API credentials. Use strong passwords and a secure secret key.
+
+For Docker Compose deployments, make sure service-to-service database connections use the correct Docker Compose service hostname, such as `mysql`, when that is how the database service is named in your configuration.
+
+Save the file and exit the editor.
+
+### Step 5: Build and Start AegisAI
+
+From the project root, run:
+
+```bash
+sudo docker compose up --build -d
+```
+
+Check the running services:
+
+```bash
+sudo docker compose ps
+```
+
+View the application logs:
+
+```bash
+sudo docker compose logs --tail=100 app
+```
+
+If the backend service has a different name in your Compose file, replace `app` with the correct service name.
+
+### Step 6: Access the Deployed Application
+
+Find the EC2 instance's current public IPv4 address in the AWS Console.
+
+If the frontend or reverse proxy is configured to serve the application on port `80`, open:
+
+```text
+http://<EC2-PUBLIC-IP>/
+```
+
+For direct backend testing, if port `8000` is intentionally exposed and permitted by the security group, use:
+
+```text
+http://<EC2-PUBLIC-IP>:8000/docs
+```
+
+Use the URL that matches your actual port mappings and frontend configuration.
+
+### Step 7: Troubleshoot the Deployment
+
+**Check container status:**
+
+```bash
+sudo docker compose ps
+```
+
+**Check application logs:**
+
+```bash
+sudo docker compose logs --tail=100 app
+```
+
+**Check whether the application responds locally on EC2:**
+
+```bash
+curl -I http://localhost:8000/docs
+```
+
+**Rebuild and restart after changing the code or dependencies:**
+
+```bash
+sudo docker compose down
+sudo docker compose up --build -d
+```
+
+If the website cannot be reached, verify that the EC2 instance is running, its public IP address is current, the required inbound security-group rule is enabled, and the application container is healthy.
+
+If a Python dependency is missing, update the project's dependency file, rebuild the image, and check the logs again.
+
+**Deployment note:** A successful Docker build does not guarantee that the application is accessible. Confirm that all required services are running and that the deployed application responds before describing the deployment as successful.
 
 ## 5. Governance thresholds (tunable via env vars / ConfigMap)
 
