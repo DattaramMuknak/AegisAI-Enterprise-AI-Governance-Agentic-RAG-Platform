@@ -22,7 +22,7 @@ User → AI Gateway (FastAPI) → Compliance Agent → Retrieval Agent (Pinecone
   detection, lexicon-based toxicity scoring, lexical-overlap hallucination/grounding scoring,
   configurable policy-violation rules
 - **Auth**: JWT + role-based access control (admin / analyst / viewer)
-- **Deployment**: Docker, Docker Compose (local)
+- **Deployment**: Docker, Docker Compose (local and AWS EC2)
 
 ## Project layout
 
